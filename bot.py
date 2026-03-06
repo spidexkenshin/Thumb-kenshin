@@ -90,44 +90,67 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data.pop(user_id)
 
 
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+def round_corner(img, radius):
+
+    mask = Image.new("L", img.size, 0)
+    draw = ImageDraw.Draw(mask)
+
+    draw.rounded_rectangle(
+        [(0,0),(img.size[0],img.size[1])],
+        radius=radius,
+        fill=255
+    )
+
+    img.putalpha(mask)
+    return img
+
+
 def create_thumb(anime):
 
-    # Background
-    bg = Image.open("bg.jpg").convert("RGBA").resize((THUMB_WIDTH, THUMB_HEIGHT))
+    W,H = 1920,1080
 
-    # Left Character
-    left = Image.open("left.png").convert("RGBA").resize((700, 900))
+    bg = Image.open("bg.jpg").convert("RGB").resize((W,H))
 
-    # Right Image
-    right = Image.open("right.png").convert("RGBA").resize((500, 700))
+    # cinematic blur
+    bg = bg.filter(ImageFilter.GaussianBlur(8))
 
-    canvas = bg.copy()
+    canvas = Image.new("RGBA",(W,H))
+    canvas.paste(bg,(0,0))
 
-    # Dark overlay
-    overlay = Image.new("RGBA", (THUMB_WIDTH, THUMB_HEIGHT), (0, 0, 0, 120))
-    canvas = Image.alpha_composite(canvas, overlay)
+    overlay = Image.new("RGBA",(W,H),(0,0,0,90))
+    canvas = Image.alpha_composite(canvas,overlay)
 
-    # Paste Left Character
-    canvas.paste(left, (100, 150), left)
+    # left character
+    left = Image.open("left.png").convert("RGBA")
+    left = left.resize((650,900))
 
-    # Right side black transparent box
-    black_box = Image.new("RGBA", (520, 720), (0, 0, 0, 150))
-    canvas.paste(black_box, (1280, 180), black_box)
+    canvas.paste(left,(120,120),left)
 
-    # Paste Right Image
-    canvas.paste(right, (1300, 200), right)
+    # right card
+    right = Image.open("right.png").convert("RGBA")
+    right = right.resize((450,650))
+
+    card = Image.new("RGBA",(480,680),(20,20,20,220))
+    card = round_corner(card,40)
+
+    canvas.paste(card,(1320,200),card)
+
+    right = round_corner(right,30)
+
+    canvas.paste(right,(1335,215),right)
 
     draw = ImageDraw.Draw(canvas)
 
-    # Fonts
-    font = ImageFont.truetype(FONT_PATH, 120)
-    brand_font = ImageFont.truetype(FONT_PATH, 60)
+    font = ImageFont.truetype("assets/font.ttf",120)
+    brand = ImageFont.truetype("assets/font.ttf",60)
 
-    # Anime Title
-    draw.text((960, 900), anime, fill="white", font=font, anchor="mm")
+    # anime title
+    draw.text((960,880),anime,fill="white",font=font,anchor="mm")
 
-    # Branding
-    draw.text((1650, 1020), "KENSHIN ANIME", fill="white", font=brand_font)
+    # branding
+    draw.text((1700,1020),"KENSHIN ANIME",fill="white",font=brand)
 
     canvas = canvas.convert("RGB")
 
