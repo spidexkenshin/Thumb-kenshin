@@ -1,76 +1,115 @@
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from thumbnail import create_thumbnail
-from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+from config import BOT_TOKEN, ADMIN_ID, FONT_PATH, THUMB_WIDTH, THUMB_HEIGHT
 
-users = {}
+user_data = {}
 
-async def create(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    await update.message.reply_text("🔥 Kenshin Anime Thumbnail Bot Ready!")
+
+async def create_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != ADMIN_ID:
         return
 
-    users[update.effective_user.id] = {"step": "bg"}
+    user_data[update.effective_user.id] = {"step": 1}
 
-    await update.message.reply_text("🎨 Send Background Image")
+    await update.message.reply_text("Send Anime Name")
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    uid = update.effective_user.id
+    user_id = update.effective_user.id
 
-    if uid not in users:
+    if user_id != ADMIN_ID:
         return
 
-    step = users[uid]["step"]
-
-    file = await update.message.photo[-1].get_file()
-    img = await file.download_as_bytearray()
-
-    if step == "bg":
-        users[uid]["bg"] = img
-        users[uid]["step"] = "right"
-        await update.message.reply_text("📺 Send Right Thumbnail")
-
-    elif step == "right":
-        users[uid]["right"] = img
-        users[uid]["step"] = "left"
-        await update.message.reply_text("🧍 Send Left Character")
-
-    elif step == "left":
-        users[uid]["left"] = img
-        users[uid]["step"] = "name"
-        await update.message.reply_text("✍ Send Anime Name")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    uid = update.effective_user.id
-
-    if uid not in users:
+    if user_id not in user_data:
         return
 
-    if users[uid]["step"] != "name":
-        return
+    data = user_data[user_id]
 
-    name = update.message.text
+    if data["step"] == 1:
 
-    bg = users[uid]["bg"]
-    right = users[uid]["right"]
-    left = users[uid]["left"]
+        data["anime"] = update.message.text
+        data["step"] = 2
 
-    path = create_thumbnail(bg,right,left,name)
+        await update.message.reply_text("Send Background Image")
 
-    await update.message.reply_photo(open(path,"rb"))
+    elif data["step"] == 2:
 
-    del users[uid]
+        photo = await update.message.photo[-1].get_file()
+        await photo.download_to_drive("bg.jpg")
 
-app = ApplicationBuilder().token(TOKEN).build()
+        data["step"] = 3
 
-app.add_handler(CommandHandler("create",create))
-app.add_handler(MessageHandler(filters.PHOTO,handle_photo))
-app.add_handler(MessageHandler(filters.TEXT,handle_text))
+        await update.message.reply_text("Send LEFT Character Image")
 
-app.run_polling()
+    elif data["step"] == 3:
+
+        photo = await update.message.photo[-1].get_file()
+        await photo.download_to_drive("left.png")
+
+        data["step"] = 4
+
+        await update.message.reply_text("Send RIGHT Thumbnail Image")
+
+    elif data["step"] == 4:
+
+        photo = await update.message.photo[-1].get_file()
+        await photo.download_to_drive("right.png")
+
+        anime_name = data["anime"]
+
+        create_thumb(anime_name)
+
+        await update.message.reply_photo(photo=open("thumbnail.png","rb"))
+
+        user_data.pop(user_id)
+
+def create_thumb(anime):
+
+    bg = Image.open("bg.jpg").resize((THUMB_WIDTH, THUMB_HEIGHT))
+    left = Image.open("left.png").resize((700,900))
+    right = Image.open("right.png").resize((500,700))
+
+    canvas = bg.convert("RGBA")
+
+    overlay = Image.new("RGBA",(THUMB_WIDTH,THUMB_HEIGHT),(0,0,0,120))
+    canvas = Image.alpha_composite(canvas, overlay)
+
+    canvas.paste(left,(100,150),left)
+    canvas.paste(right,(1300,200),right)
+
+    draw = ImageDraw.Draw(canvas)
+
+    font = ImageFont.truetype(FONT_PATH,120)
+    brand_font = ImageFont.truetype(FONT_PATH,60)
+
+    draw.text((900,850),anime,fill="white",font=font,anchor="mm")
+
+    draw.text((1600,1000),"KENSHIN ANIME",fill="white",font=brand_font)
+
+    canvas = canvas.convert("RGB")
+
+    canvas.save("thumbnail.png")
+
+def main():
+
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("create_thumbnail", create_thumbnail))
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
+
+    print("Bot Running...")
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
